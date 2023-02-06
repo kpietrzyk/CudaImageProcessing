@@ -15,11 +15,21 @@
 #define B 2
 #define A 3
 
+#define BLOCK_SIZE 16
+
+typedef struct
+{
+    int width;
+    int height;
+    unsigned char* elements;
+} Matrix;
+
+
 // TODO:
 // Zmienic sciezke do pliku neon.png
 // zbudowac wersje
 const char * PATH = "C:/Users/krzys/source/repos/CudaRuntime5/x64/Release/neon.png";
-
+__global__ void ResizeImage(Matrix Am, Matrix C, int32_t src_img_width, int32_t src_img_height, int32_t dest_img_width, int32_t dest_img_height);
 
 struct Pixel
 {
@@ -244,6 +254,167 @@ void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width,
 }
 
 
+// RESIZE PART
+
+
+//deklaracja funkcji resize
+
+
+// wrapper do kerneli
+unsigned char* kernel_wrapper(unsigned char* data, unsigned char* resized, int d_w, int d_h)
+{
+
+    // tutaj troch� ba�agan, ale tak wszystko powt�rzy�em, �eby by�a jasno�� co czym jest
+    int32_t rgb_size = 4; //RGBA
+
+    int32_t src_img_width = 880;
+    int32_t src_img_height = 880;
+    uint64_t src_size = src_img_height * src_img_width * rgb_size * sizeof(uint8_t);
+
+    int32_t dest_img_width = d_w;
+    int32_t dest_img_height = d_h;
+    uint64_t dest_size = dest_img_height * dest_img_width * rgb_size * sizeof(uint8_t);
+
+    // tutaj tworzymy nasze struktury z danymi dla cz�� po stronie CPU
+    Matrix A_cpu;
+    A_cpu.width = src_img_width * rgb_size;
+    A_cpu.height = src_img_height;
+    A_cpu.elements = data;
+
+    Matrix C_cpu;
+    C_cpu.width = dest_img_width * rgb_size;
+    C_cpu.height = dest_img_height;
+    C_cpu.elements = (uint8_t*)malloc(dest_size);
+
+
+    // Tutaj po stronie GPU 
+    Matrix A_gpu;
+    A_gpu.width = A_cpu.width;
+    A_gpu.height = A_cpu.height;
+
+    std::cout << "Kopiowanie do GPU.....";
+    cudaMalloc(&A_gpu.elements, src_size);
+    //kopiujemy dane z pami�� po stronie CPU na pmami�� GPU
+    cudaMemcpy(A_gpu.elements, A_cpu.elements, src_size, cudaMemcpyHostToDevice);
+    Matrix C_gpu;    C_gpu.width = C_cpu.width;
+    C_gpu.height = C_cpu.height;
+    cudaMalloc(&C_gpu.elements, dest_size);
+    std::cout << "ZAKONCZONO" << std::endl;
+
+    std::cout << "KERNEL PRACUJE....";
+    dim3 threadsPerBlock(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 numBlocks(dest_img_width / threadsPerBlock.x, dest_img_height / threadsPerBlock.y);
+    // wykonie operacji na GPU
+    ResizeImage << <numBlocks, threadsPerBlock >> > (A_gpu, C_gpu, src_img_width, src_img_height, dest_img_width, dest_img_height);
+    std::cout << "ZAKONCZONO" << std::endl;
+
+    std::cout << "Kopiowanie z GPU...";
+    // kopiowanie z GPU na CPU
+    cudaMemcpy(C_cpu.elements, C_gpu.elements, dest_size, cudaMemcpyDeviceToHost);
+    // zwalnienie pami�ci
+    cudaFree(A_gpu.elements);
+    cudaFree(C_gpu.elements);
+    // stb image dzia�a na unsigned char, a przyk�adaowy resize bilinearny co wysy�a�em        // linka jest na uint8, wi�c szybki cast  - to z lenistwa wi�c mo�ecie robi� po swojemu
+    resized = (unsigned char*)C_cpu.elements;
+    //zwracamy nasz pointer i potem w main.cpp mo�na zwolni� pami�� - ja zapomnia�em, ale      //i tak jak visual ko�czy wykonywa� swoje to wywala to wszystko, wi�c git. Przy            // zwyk�ych projektach, gdzie du�o si� dzieje itp. to pami�tajcie o tym.
+    std::cout << "ZAKONCZONO" << std::endl;
+
+    return resized;
+}
+
+// tutaj ta g��wna operacja ze strony, gdzie si� interpoluje warto�ci pojedynczych pikseli
+__device__ uint8_t biliner(
+    const float tx,
+    const float ty,
+    const uint8_t c00,
+    const uint8_t c10,
+    const uint8_t c01,
+    const uint8_t c11)
+{
+    const float color = (1.0f - tx) * (1.0f - ty) * (c00 / 255.0) +
+        tx * (1.0f - ty) * (c10 / 255.0) +
+        (1.0f - tx) * ty * (c01 / 255.0) +
+        tx * ty * (c11 / 255.0);
+
+    return (color * 255);
+}
+
+
+__global__
+void ResizeImage(
+    const Matrix Am,
+    const Matrix Cm,
+    const int32_t src_img_width,
+    const int32_t src_img_height,
+    const int32_t dest_img_width,
+    const int32_t dest_img_height)
+{
+    const int RGB_SIZE = 4;
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+
+    if (row < dest_img_height - 1 && col < dest_img_width - 1)
+    {
+        const float gx = col * (float(src_img_width) / dest_img_width);
+        const int gxi = int(gx) * RGB_SIZE;
+        const float gy = row * (float(src_img_height) / dest_img_height);
+        const int gyi = int(gy);
+
+        const int c00_index = gyi * Am.width + gxi;
+        const uint8_t c00_1 = Am.elements[c00_index]; //R
+        const uint8_t c00_2 = Am.elements[c00_index + 1]; //G
+        const uint8_t c00_3 = Am.elements[c00_index + 2]; //B
+
+        const int c10_index = gyi * Am.width + (gxi + RGB_SIZE);
+        const uint8_t c10_1 = Am.elements[c10_index]; //R
+        const uint8_t c10_2 = Am.elements[c10_index + 1]; //G
+        const uint8_t c10_3 = Am.elements[c10_index + 2]; //B
+
+        const int c01_index = (gyi + 1) * Am.width + gxi;
+        const uint8_t c01_1 = Am.elements[c01_index]; //R
+        const uint8_t c01_2 = Am.elements[c01_index + 1]; //G
+        const uint8_t c01_3 = Am.elements[c01_index + 2]; //B
+
+        const int c11_index = (gyi + 1) * Am.width + (gxi + RGB_SIZE);
+        const uint8_t c11_1 = Am.elements[c11_index]; //R
+        const uint8_t c11_2 = Am.elements[c11_index + 1]; //G
+        const uint8_t c11_3 = Am.elements[c11_index + 2]; //B
+        const float tx = gx - int(gx);
+        const float ty = gy - gyi;
+        const int C_dest = row * Cm.width + col * RGB_SIZE;
+
+        const uint8_t Cvalue_R = biliner(tx, ty, c00_1, c10_1, c01_1, c11_1);
+        Cm.elements[C_dest] = Cvalue_R;
+
+        const uint8_t Cvalue_G = biliner(tx, ty, c00_2, c10_2, c01_2, c11_2);
+        Cm.elements[C_dest + 1] = Cvalue_G;
+
+        const uint8_t Cvalue_B = biliner(tx, ty, c00_3, c10_3, c01_3, c11_3);
+        Cm.elements[C_dest + 2] = Cvalue_B;
+
+        Cm.elements[C_dest + 3] = 255;
+
+    }
+    else if (col == dest_img_width - 1 && row < dest_img_height) {
+        const int C_dest = (row)*Cm.width + col * RGB_SIZE;
+
+        Cm.elements[C_dest] = Am.elements[(row)*Am.width + (col - 1) * RGB_SIZE];
+        Cm.elements[C_dest + 1] = Am.elements[(row)*Am.width + (col - 1) * RGB_SIZE + 1];
+        Cm.elements[C_dest + 2] = Am.elements[(row)*Am.width + (col - 1) * RGB_SIZE + 2];
+        Cm.elements[C_dest + 3] = 255;
+    }
+    else if (col < dest_img_width && row == dest_img_height - 1) {
+        const int C_dest = (row)*Cm.width + col * RGB_SIZE;
+        Cm.elements[C_dest] = Am.elements[(row - 1) * Am.width + (col)*RGB_SIZE];
+        Cm.elements[C_dest + 1] = Am.elements[(row - 1) * Am.width + (col)*RGB_SIZE + 1];
+        Cm.elements[C_dest + 2] = Am.elements[(row - 1) * Am.width + (col)*RGB_SIZE + 2];
+        Cm.elements[C_dest + 3] = 255;
+    }
+}
+
+// END OF RESIZE PART
+
 
 int main(int argc, char** argv)
 {
@@ -335,5 +506,29 @@ int main(int argc, char** argv)
     stbi_image_free(imageData);
     system("pause");
 
+    // RESIZE
+    std::cout << "--------------RESIZED IMAGE--------------" << std::endl;
+    // wymiary zdjecia wejsciowego
+    int s_w = 880;
+    int s_h = 880;
 
+    // tutaj wybieracie czy chcecie zwiekszyc czy zmniejszyc zdjecie
+    float res = 0.5;
+    // wymiary zdjecia docelowego
+    int d_w = int(res * 880.);
+    int d_h = int(res * 880.);
+
+    int channels;
+
+    unsigned char* img = stbi_load(PATH, &s_w, &s_h, &channels, 0);
+
+    stbi_write_png("old_image.png", s_w, s_h, channels, img, s_w * channels);
+
+    unsigned char* resized = (unsigned char*)malloc((d_w * d_h * 4) * sizeof(unsigned char));
+
+    resized = kernel_wrapper(img, resized, d_w, d_h);
+    std::cout << "Zapisywanie pliku...";
+    stbi_write_png("saved_image.png", d_w, d_h, channels, resized, d_w * channels);
+    std::cout << "ZAKONCZONO :)" << std::endl;
+    system("pause");
 }
