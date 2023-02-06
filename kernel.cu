@@ -9,12 +9,15 @@
 #include <iostream>
 #include <string>
 #include <cassert>
-#define BLUR_SIZE 7
+#define BLUR_SIZE 3
 #define R 0
 #define G 1
 #define B 2
 #define A 3
 
+// TODO:
+// Zmienic sciezke do pliku neon.png
+// zbudowac wersje
 const char * PATH = "C:/Users/krzys/source/repos/CudaRuntime5/x64/Release/neon.png";
 
 
@@ -240,7 +243,7 @@ void blackAndWhiteImageWrapper(unsigned char* imageData, int width, int height) 
 
 
 void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width, int height) {
-    int n = 4;
+    int n = 4; // liczba kanalow
     unsigned char* Dev_Input_Image = NULL;
     unsigned char* Dev_Output_Image = NULL;
     cudaMalloc((void**)&Dev_Input_Image, sizeof(unsigned char) * height * width * n);
@@ -248,7 +251,7 @@ void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width,
 
     cudaMemcpy(Dev_Input_Image, imageData, sizeof(unsigned char) * height * width * n, cudaMemcpyHostToDevice);
 
-    //kernel call
+    
     dim3 blockSize(16, 16, 1);
     dim3 gridSize(width / blockSize.x, height / blockSize.y, 1);
     blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, R, 0);
@@ -268,7 +271,7 @@ int main(int argc, char** argv)
 {
    
     int width, height, componentCount;
-    std::cout << "Wczytywanie pliku....";
+    std::cout << "Wczytywanie pliku...." <<std::endl;
     system("pause");
     
     unsigned char* imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
@@ -284,7 +287,7 @@ int main(int argc, char** argv)
     if (width % 16 || height % 16)
     {
         // NOTE: Leaked memory of "imageData"
-        std::cout << "Wymary obrazka nie sa podzielne przez 16!";
+        std::cout << "Wymary obrazka nie sa podzielne przez 16!" << std::endl;
         return -1;
     }
      
@@ -293,9 +296,9 @@ int main(int argc, char** argv)
     // INVERT 
     invertImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku...";
+    std::cout << "Zapisywanie pliku..." << std::endl;
     stbi_write_png("inverted_neon.png", width, height, 4, imageData, 4 * width);
-    std::cout << "ZAKONCZONO :)";
+    std::cout << "ZAKONCZONO :)" << std::endl;
     // Zwolnienie pamięci    
     stbi_image_free(imageData);
     system("pause");
@@ -307,9 +310,9 @@ int main(int argc, char** argv)
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     grayImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku...";
+    std::cout << "Zapisywanie pliku..." << std::endl;
     stbi_write_png("gray_neon.png", width, height, 4, imageData, 4 * width);
-    std::cout << "ZAKONCZONO :)";
+    std::cout << "ZAKONCZONO :)" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
@@ -318,9 +321,9 @@ int main(int argc, char** argv)
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     sepiaImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku...";
+    std::cout << "Zapisywanie pliku..." << std::endl;
     stbi_write_png("sepia_neon.png", width, height, 4, imageData, 4 * width);
-    std::cout << "ZAKONCZONO :)";
+    std::cout << "ZAKONCZONO :)" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
@@ -329,9 +332,9 @@ int main(int argc, char** argv)
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     blackAndWhiteImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku...";
+    std::cout << "Zapisywanie pliku..." << std::endl;
     stbi_write_png("bw_neon.png", width, height, 4, imageData, 4 * width);
-    std::cout << "ZAKONCZONO :)";
+    std::cout << "ZAKONCZONO :)" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
@@ -345,9 +348,9 @@ int main(int argc, char** argv)
     
     
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku...";
+    std::cout << "Zapisywanie pliku..." << std::endl;
     stbi_write_png("blur_neon.png", width, height, 4, imageData, 4 * width);
-    std::cout << "ZAKONCZONO :)";
+    std::cout << "ZAKONCZONO :)" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
