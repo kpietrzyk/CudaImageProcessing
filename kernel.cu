@@ -9,8 +9,14 @@
 #include <iostream>
 #include <string>
 #include <cassert>
+#define BLUR_SIZE 7
+#define R 0
+#define G 1
+#define B 2
+#define A 3
 
 const char * PATH = "C:/Users/krzys/source/repos/CudaRuntime5/x64/Release/neon.png";
+
 
 struct Pixel
 {
@@ -102,6 +108,30 @@ __global__ void CovertImageToBlackAndWhiteGpu(unsigned char* imageRGBA)
    ptrPixel->g = b_or_w_pixel;
    ptrPixel->b = b_or_w_pixel;
    ptrPixel->a = 255;
+}
+
+__global__ void blurKernel(unsigned char* in, unsigned char* out, int width, int height, int num_channel, int channel, int copy_A) {
+
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (col < width && row < height) {
+        int pixVal = 0;
+        int pixels = 0;
+        if (copy_A)
+            out[row * width * num_channel + col * num_channel + A] = in[row * width * num_channel + col * num_channel + A];
+        for (int blurRow = -BLUR_SIZE; blurRow < BLUR_SIZE + 1; ++blurRow) {
+            for (int blurCol = -BLUR_SIZE; blurCol < BLUR_SIZE + 1; ++blurCol) {
+                int curRow = row + blurRow;
+                int curCol = col + blurCol;
+                if (curRow > -1 && curRow < height && curCol > -1 && curCol < width) {
+                    pixVal += in[curRow * width * num_channel + curCol * num_channel + channel];
+                    pixels++;
+                }
+            }
+        }
+        out[row * width * num_channel + col * num_channel + channel] = (unsigned char)(pixVal / pixels);
+    }
 }
 
 void invertImageWrapper(unsigned char* imageData, int width, int height) {
@@ -208,6 +238,32 @@ void blackAndWhiteImageWrapper(unsigned char* imageData, int width, int height) 
     cudaFree(ptrImageDataGpu);
 }
 
+
+void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width, int height) {
+    int n = 4;
+    unsigned char* Dev_Input_Image = NULL;
+    unsigned char* Dev_Output_Image = NULL;
+    cudaMalloc((void**)&Dev_Input_Image, sizeof(unsigned char) * height * width * n);
+    cudaMalloc((void**)&Dev_Output_Image, sizeof(unsigned char) * height * width * n);
+
+    cudaMemcpy(Dev_Input_Image, imageData, sizeof(unsigned char) * height * width * n, cudaMemcpyHostToDevice);
+
+    //kernel call
+    dim3 blockSize(16, 16, 1);
+    dim3 gridSize(width / blockSize.x, height / blockSize.y, 1);
+    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, R, 0);
+    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, G, 0);
+    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, B, 1);
+
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(imageData, Dev_Output_Image, sizeof(unsigned char) * height * width * n, cudaMemcpyDeviceToHost);
+    cudaFree(Dev_Input_Image);
+    cudaFree(Dev_Output_Image);
+}
+
+
+
 int main(int argc, char** argv)
 {
    
@@ -279,6 +335,24 @@ int main(int argc, char** argv)
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
+
+    // BLUR
+    imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
+      
+    unsigned char* output = (unsigned char*)malloc(width * height * 4 * sizeof(unsigned char));
+
+    blurImageWrapper(imageData, output, width, height);
+    
+    
+    // Zapisywanie pliku
+    std::cout << "Zapisywanie pliku...";
+    stbi_write_png("blur_neon.png", width, height, 4, imageData, 4 * width);
+    std::cout << "ZAKONCZONO :)";
+    // Zwolnienie pamięci 
+    stbi_image_free(imageData);
+    system("pause");
+
+
 
 
     // RESIZE
