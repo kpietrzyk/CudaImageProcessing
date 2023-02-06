@@ -25,23 +25,7 @@ struct Pixel
 {
     unsigned char r, g, b, a;
 };
-/*
-void ConvertImageToGrayCpu(unsigned char* imageRGBA, int width, int height)
-{
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
-            Pixel* ptrPixel = (Pixel*)&imageRGBA[y * width * 4 + 4 * x];
-            unsigned char pixelValue = (unsigned char)(ptrPixel->r * 0.2126f + ptrPixel->g * 0.7152f + ptrPixel->b * 0.0722f);
-            ptrPixel->r = pixelValue;
-            ptrPixel->g = pixelValue;
-            ptrPixel->b = pixelValue;
-            ptrPixel->a = 255;
-        }
-    }
-}
-*/
+
 __global__ void ConvertImageToGrayGpu(unsigned char* imageRGBA)
 {
     
@@ -113,41 +97,38 @@ __global__ void CovertImageToBlackAndWhiteGpu(unsigned char* imageRGBA)
    ptrPixel->a = 255;
 }
 
-__global__ void blurKernel(unsigned char* in, unsigned char* out, int width, int height, int num_channel, int channel, int copy_A) {
+__global__ void ConvertImageToBlurGpu(unsigned char* in, unsigned char* out, int width, int height, int channels, int channel, int cA) {
 
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (col < width && row < height) {
-        int pixVal = 0;
+        int pixelValue = 0;
         int pixels = 0;
-        if (copy_A)
-            out[row * width * num_channel + col * num_channel + A] = in[row * width * num_channel + col * num_channel + A];
+        if (cA)
+            out[row * width * channels + col * channels + A] = in[row * width * channels + col * channels + A];
         for (int blurRow = -BLUR_SIZE; blurRow < BLUR_SIZE + 1; ++blurRow) {
             for (int blurCol = -BLUR_SIZE; blurCol < BLUR_SIZE + 1; ++blurCol) {
                 int curRow = row + blurRow;
                 int curCol = col + blurCol;
                 if (curRow > -1 && curRow < height && curCol > -1 && curCol < width) {
-                    pixVal += in[curRow * width * num_channel + curCol * num_channel + channel];
+                    pixelValue += in[curRow * width * channels + curCol * channels + channel];
                     pixels++;
                 }
             }
         }
-        out[row * width * num_channel + col * num_channel + channel] = (unsigned char)(pixVal / pixels);
+        out[row * width * channels + col * channels + channel] = (unsigned char)(pixelValue / pixels);
     }
 }
 
 void invertImageWrapper(unsigned char* imageData, int width, int height) {
-
-    // Copy data to the gpu
-    std::cout << "Kopiowanie do GPU.";
+       
+    std::cout << "Kopiowanie do GPU.....";
     unsigned char* ptrImageDataGpu = nullptr;
     cudaMalloc(&ptrImageDataGpu, width * height * 4);
     cudaMemcpy(ptrImageDataGpu, imageData, width * height * 4, cudaMemcpyHostToDevice);
     std::cout << "ZAKONCZONO" << std::endl;
 
-
-    // Process image on gpu
     std::cout << "KERNEL PRACUJE....";
     dim3 blockSize(16, 16);
     dim3 gridSize(width / blockSize.x, height / blockSize.y);
@@ -155,27 +136,21 @@ void invertImageWrapper(unsigned char* imageData, int width, int height) {
     auto err = cudaGetLastError();
     std::cout << "ZAKONCZONO" << std::endl;
 
-
-
-    // Copy data from the gpu
     std::cout << "Kopiowanie z GPU...";
     cudaMemcpy(imageData, ptrImageDataGpu, width * height * 4, cudaMemcpyDeviceToHost);
     std::cout << "ZAKONCZONO" << std::endl;
-
 
     cudaFree(ptrImageDataGpu);
 }
 
 void grayImageWrapper(unsigned char* imageData, int width, int height) {
-
-    // Copy data to the gpu
-    std::cout << "Kopiowanie do GPU.";
+       
+    std::cout << "Kopiowanie do GPU.....";
     unsigned char* ptrImageDataGpu = nullptr;
     cudaMalloc(&ptrImageDataGpu, width * height * 4);
     cudaMemcpy(ptrImageDataGpu, imageData, width * height * 4, cudaMemcpyHostToDevice);
     std::cout << "ZAKONCZONO" << std::endl;
 
-    // Process image on gpu
     std::cout << "KERNEL PRACUJE....";
     dim3 blockSize(16, 16);
     dim3 gridSize(width / blockSize.x, height / blockSize.y);
@@ -193,21 +168,18 @@ void grayImageWrapper(unsigned char* imageData, int width, int height) {
 
 void sepiaImageWrapper(unsigned char* imageData, int width, int height) {
 
-    // Copy data to the gpu
-    std::cout << "Kopiowanie do GPU.";
+    std::cout << "Kopiowanie do GPU.....";
     unsigned char* ptrImageDataGpu = nullptr;
     cudaMalloc(&ptrImageDataGpu, width * height * 4);
     cudaMemcpy(ptrImageDataGpu, imageData, width * height * 4, cudaMemcpyHostToDevice);
     std::cout << "ZAKONCZONO" << std::endl;
 
-    // Process image on gpu
     std::cout << "KERNEL PRACUJE....";
     dim3 blockSize(16, 16);
     dim3 gridSize(width / blockSize.x, height / blockSize.y);
     CovertImageToSepiaGpu << <gridSize, blockSize >> > (ptrImageDataGpu);
     auto err = cudaGetLastError();
     std::cout << "ZAKONCZONO" << std::endl;
-
 
     std::cout << "Kopiowanie z GPU...";
     cudaMemcpy(imageData, ptrImageDataGpu, width * height * 4, cudaMemcpyDeviceToHost);
@@ -218,21 +190,18 @@ void sepiaImageWrapper(unsigned char* imageData, int width, int height) {
 
 void blackAndWhiteImageWrapper(unsigned char* imageData, int width, int height) {
 
-    // Copy data to the gpu
-    std::cout << "Kopiowanie do GPU.";
+    std::cout << "Kopiowanie do GPU.....";
     unsigned char* ptrImageDataGpu = nullptr;
     cudaMalloc(&ptrImageDataGpu, width * height * 4);
     cudaMemcpy(ptrImageDataGpu, imageData, width * height * 4, cudaMemcpyHostToDevice);
     std::cout << "ZAKONCZONO" << std::endl;
 
-    // Process image on gpu
     std::cout << "KERNEL PRACUJE....";
     dim3 blockSize(16, 16);
     dim3 gridSize(width / blockSize.x, height / blockSize.y);
     CovertImageToBlackAndWhiteGpu << <gridSize, blockSize >> > (ptrImageDataGpu);
     auto err = cudaGetLastError();
     std::cout << "ZAKONCZONO" << std::endl;
-
 
     std::cout << "Kopiowanie z GPU...";
     cudaMemcpy(imageData, ptrImageDataGpu, width * height * 4, cudaMemcpyDeviceToHost);
@@ -243,24 +212,33 @@ void blackAndWhiteImageWrapper(unsigned char* imageData, int width, int height) 
 
 
 void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width, int height) {
+
     int n = 4; // liczba kanalow
     unsigned char* Dev_Input_Image = NULL;
     unsigned char* Dev_Output_Image = NULL;
+
+    std::cout << "Kopiowanie do GPU.....";
     cudaMalloc((void**)&Dev_Input_Image, sizeof(unsigned char) * height * width * n);
-    cudaMalloc((void**)&Dev_Output_Image, sizeof(unsigned char) * height * width * n);
-
+    cudaMalloc((void**)&Dev_Output_Image, sizeof(unsigned char) * height * width * n);    
     cudaMemcpy(Dev_Input_Image, imageData, sizeof(unsigned char) * height * width * n, cudaMemcpyHostToDevice);
+    std::cout << "ZAKONCZONO" << std::endl;
 
-    
+    std::cout << "KERNEL PRACUJE....";
     dim3 blockSize(16, 16, 1);
     dim3 gridSize(width / blockSize.x, height / blockSize.y, 1);
-    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, R, 0);
-    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, G, 0);
-    blurKernel << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, B, 1);
+
+    // Blur na odpowiednich kanalach R G B 
+    ConvertImageToBlurGpu << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, R, 0);
+    ConvertImageToBlurGpu << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, G, 0);
+    ConvertImageToBlurGpu << <gridSize, blockSize >> > (Dev_Input_Image, Dev_Output_Image, width, height, n, B, 1);
 
     cudaDeviceSynchronize();
+    std::cout << "ZAKONCZONO" << std::endl;
 
+    std::cout << "Kopiowanie z GPU...";
     cudaMemcpy(imageData, Dev_Output_Image, sizeof(unsigned char) * height * width * n, cudaMemcpyDeviceToHost);
+    std::cout << "ZAKONCZONO" << std::endl;
+
     cudaFree(Dev_Input_Image);
     cudaFree(Dev_Output_Image);
 }
@@ -269,11 +247,10 @@ void blurImageWrapper(unsigned char* imageData,unsigned char* output, int width,
 
 int main(int argc, char** argv)
 {
-   
-    int width, height, componentCount;
-    std::cout << "Wczytywanie pliku...." <<std::endl;
+   int width, height, componentCount;
+
+    std::cout << "Wczytywanie pliku....";
     system("pause");
-    
     unsigned char* imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     if (!imageData)
     {
@@ -281,82 +258,82 @@ int main(int argc, char** argv)
         system("pause");
         return -1;
     }
-    std::cout << " DONE" << std::endl;
+    std::cout << "ZAKONCZONO" << std::endl;
+   
 
-    // Validate image sizes
+    // Weryfikacja rozmiaru zdjecia (wielokrotnosc liczby 16)
     if (width % 16 || height % 16)
     {
-        // NOTE: Leaked memory of "imageData"
-        std::cout << "Wymary obrazka nie sa podzielne przez 16!" << std::endl;
+        std::cout << "Wymary obrazka nie sa wielokrotnoscia liczby 16!" << std::endl;
         return -1;
     }
-     
     
+    // FILTRY
     
-    // INVERT 
+    // INVERT
+    std::cout << "--------------INVERT IMAGE--------------" << std::endl;
     invertImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku..." << std::endl;
+    std::cout << "Zapisywanie pliku...";
     stbi_write_png("inverted_neon.png", width, height, 4, imageData, 4 * width);
     std::cout << "ZAKONCZONO :)" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     // Zwolnienie pamięci    
     stbi_image_free(imageData);
     system("pause");
-
-
-
-    
+       
     // GRAY
+    std::cout << "--------------GRAY IMAGE--------------" << std::endl;
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     grayImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku..." << std::endl;
+    std::cout << "Zapisywanie pliku...";
     stbi_write_png("gray_neon.png", width, height, 4, imageData, 4 * width);
     std::cout << "ZAKONCZONO :)" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
 
     // SEPIA
+    std::cout << "--------------SEPIA IMAGE--------------" << std::endl;
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     sepiaImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku..." << std::endl;
+    std::cout << "Zapisywanie pliku...";
     stbi_write_png("sepia_neon.png", width, height, 4, imageData, 4 * width);
     std::cout << "ZAKONCZONO :)" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
 
     // BLACK AND WHITE
+    std::cout << "--------------B&W IMAGE--------------" << std::endl;
     imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
     blackAndWhiteImageWrapper(imageData, width, height);
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku..." << std::endl;
+    std::cout << "Zapisywanie pliku...";
     stbi_write_png("bw_neon.png", width, height, 4, imageData, 4 * width);
     std::cout << "ZAKONCZONO :)" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
 
     // BLUR
-    imageData = stbi_load(PATH, &width, &height, &componentCount, 4);
-      
+    std::cout << "--------------BLURED IMAGE--------------" << std::endl;
+    imageData = stbi_load(PATH, &width, &height, &componentCount, 4);      
     unsigned char* output = (unsigned char*)malloc(width * height * 4 * sizeof(unsigned char));
-
-    blurImageWrapper(imageData, output, width, height);
-    
-    
+    blurImageWrapper(imageData, output, width, height);       
     // Zapisywanie pliku
-    std::cout << "Zapisywanie pliku..." << std::endl;
+    std::cout << "Zapisywanie pliku...";
     stbi_write_png("blur_neon.png", width, height, 4, imageData, 4 * width);
     std::cout << "ZAKONCZONO :)" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     // Zwolnienie pamięci 
     stbi_image_free(imageData);
     system("pause");
 
 
-
-
-    // RESIZE
 }
